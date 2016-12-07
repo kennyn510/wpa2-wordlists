@@ -1,3 +1,3 @@
-# wordlists-stash
+# wpa2-wordlists
 
-A collection of popular wordlists from the internet and randomly generated ones by me.
+A collection of wordlist/dictionaries used for wpa/wpa2 cracking.
