@@ -3,7 +3,7 @@
 A collection of wordlist/dictionaries used for wpa/wpa2 cracking.
 
 # How to sort, remove duplicates
-I've included a script for removing duplicates, sort, and other ways of manipulating files.
+I've included a script for removing duplicates, sorting, and other ways of manipulating text files.
 
 On UNIX/Linux, run the script:
 ./manipulate.sh
