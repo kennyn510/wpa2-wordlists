@@ -2,13 +2,26 @@
 
 A collection of wordlist/dictionaries used for wpa/wpa2 cracking.
 
-# How to sort, remove duplicates
-I've included a script for removing duplicates, sorting, and other ways of manipulating text files.
+## Useful one-liners for wordlist manipulation
+### Remove duplicates
+```
+awk '!(count[$0]++)' old.txt > new.txt
+```
+### Sort by length
+```
+awk '{print length, $0}' old.txt | sort -n | cut -d " " -f2- > new.txt
+```
 
-On UNIX/Linux, run the script:
-./manipulate.sh
+### Sort by alphabetical order
+```
+sort old.txt | uniq > new.txt
+```
+### Merge multiple text files into one
+```
+cat file1.txt file2.txt > combined.txt
+```
 
-1. Remove duplicates
-2. Sort by length
-3. Sort by [0-9][A-Z]
-4. Remove all blank lines
+### Remove all blank lines
+```
+egrep -v "^[[:space:]]*$" old.txt > new.txt
+```
