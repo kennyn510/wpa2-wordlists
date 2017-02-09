@@ -4,7 +4,7 @@ A collection of wordlist/dictionaries used for wpa/wpa2 cracking.
 
 ### How To Use:
 
-* gitclone https://github.com/kennyn510/wpa2-wordlists.git
+* git clone https://github.com/kennyn510/wpa2-wordlists.git
 * cd wpa2-wordlists
 * gunzip *.gz
 * cat *.txt >> full.txt
