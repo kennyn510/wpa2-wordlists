@@ -1,6 +1,6 @@
 # wpa2-wordlists
 
-A collection of wordlist/dictionaries used for wpa/wpa2 cracking.
+A collection of passwords and wordlists commonly used for dictionary-attacks using a variety of password cracking tools such as aircrack-ng, hydra and hashcat.
 
 ### How To Use:
 
