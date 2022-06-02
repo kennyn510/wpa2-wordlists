@@ -1,3 +1,5 @@
+This repo is based off kennyn510:wpa2-wordlists here https://github.com/kennyn510/wpa2-wordlists.git
+
 # wpa2-wordlists
 
 A collection of passwords and wordlists commonly used for dictionary-attacks using a variety of password cracking tools such as aircrack-ng, hydra and hashcat.
@@ -6,8 +8,8 @@ A collection of passwords and wordlists commonly used for dictionary-attacks usi
 
 * git clone https://github.com/kennyn510/wpa2-wordlists.git
 * cd wpa2-wordlists/Wordlists/example2016
-* gunzip *.gz
-* cat *.txt >> full.txt
+* gunzip -r *.gz
+* find /path/to/directory/ -name *.txt -print0 | xargs -0 -I file cat file > merged.file
 
 ## Useful one-liners for wordlist manipulation
 **Remove duplicates**
