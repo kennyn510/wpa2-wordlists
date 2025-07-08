@@ -1,0 +1,610 @@
+name: AI Code Reviewer
+
+on:
+  workflow_run:
+    workflows: ["Unittest"]
+    types:
+      - completed
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+      - name: 'Download artifact'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id,
+            });
+            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "pr_number"
+            })[0];
+            if (matchArtifact) {
+              core.setOutput("hasArtifact", "true");
+              let download = await github.rest.actions.downloadArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: matchArtifact.id,
+                archive_format: 'zip',
+              });
+              let fs = require('fs');
+              fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/pr_number.zip`, Buffer.from(download.data));
+            }
+      - name: 'Unzip artifact'
+        if: ${{ hashFiles('pr_number.zip') != '' }}
+        run: unzip pr_number.zip
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+            python-version: "3.x"
+            cache: 'pip'
+      - name: Install Requirements
+        run: |
+          pip install -r requirements.txt
+          pip install PyGithub
+      - name: AI Code Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python -m etc.tool.copilot
+        name: Publish Python 🐍 distribution 📦 to PyPI
+
+on: push
+
+env:
+  G4F_VERSION: ${{ github.ref_name }}
+
+jobs:
+  build:
+    name: Build distribution 📦
+    if: github.repository == 'xtekky/gpt4free' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.x"
+    - name: Install pypa/build
+      run: >-
+        python3 -m
+        pip install
+        build
+        --user
+    - name: Build a binary wheel and a source tarball
+      run: python3 -m build
+    - name: Store the distribution packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+  publish-to-pypi:
+    name: >-
+      Publish distribution on PyPI 🐍
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+    - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/g4f
+    permissions:
+      id-token: write
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+    - name: Publish distribution 📦 to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+# Config for the Gemini Pull Request Review Bot.
+# https://github.com/luthfina16/Artificial-Intellegence-Project-autospeaksfromautolistenautomakeemotionwithallowityfromhuman
+have_fun: false
+code_review:
+  disable: false
+  comment_severity_threshold: HIGH
+  max_review_comments: -1
+  pull_request_opened:
+    help: false
+    summary: true
+    code_review: true
+ignore_patterns: []# This workflow will upload a Python Package to PyPI when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+name: Publish Docker image
+
+on:
+  push:
+    tags:
+      - '**'
+
+jobs:
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.13"
+        cache: 'pip'
+    - name: Install requirements
+      run: |
+        pip install fastapi uvicorn python-multipart
+        pip install -r requirements-min.txt
+    - name: Generate openapi.json
+      run: |
+        python -m etc.tool.openapi
+    - uses: actions/upload-artifact@v4
+      with:
+        name: openapi
+        path: openapi.json
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Get metadata for Docker
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            hlohaus789/g4f
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push armv7 image
+        uses: docker/build-push-action@v5
+        with:
+            context: .
+            file: docker/Dockerfile-armv7
+            platforms: linux/arm/v7
+            push: true
+            tags: |
+              hlohaus789/g4f:latest-armv7
+              hlohaus789/g4f:${{ github.ref_name }}-armv7
+            labels: ${{ steps.metadata.outputs.labels }}
+            build-args: |
+              G4F_VERSION=${{ github.ref_name }}
+
+      - name: Build and push small images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile-slim
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            hlohaus789/g4f:latest-slim
+            hlohaus789/g4f:${{ github.ref_name }}-slim
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            G4F_VERSION=${{ github.ref_name }}
+
+      - name: Build and push arm64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile-slim
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            G4F_VERSION=${{ github.ref_name }}
+
+      - name: Build and push big image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            G4F_VERSION=${{ github.ref_name }}
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
+    environment:
+      name: pypi
+      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
+      # url: https://pypi.org/p/YOURPROJECT
+      #
+      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
+      # ALTERNATIVE: exactly, uncomment the following line instead:
+      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        
+        with:
+          packages-dir: dist/
+          #!/bin/bash
+set -euo pipefail
+
+# Initialize a comma-separated string to hold PR numbers that need a comment
+PRS_NEEDING_COMMENT=""
+
+# Function to process a single PR
+process_pr() {
+    local PR_NUMBER=$1
+    echo "🔄 Processing PR #$PR_NUMBER"
+
+    # Get PR body with error handling
+    local PR_BODY
+    if ! PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null); then
+        echo "   ⚠️ Could not fetch PR #$PR_NUMBER details"
+        return 1
+    fi
+
+    # Look for issue references using multiple patterns
+    local ISSUE_NUMBER=""
+
+    # Pattern 1: Direct reference like #123
+    if [ -z "$ISSUE_NUMBER" ]; then
+        ISSUE_NUMBER=$(echo "$PR_BODY" | grep -oE '#[0-9]+' | head -1 | sed 's/#//' 2>/dev/null || echo "")
+    fi
+
+    # Pattern 2: Closes/Fixes/Resolves patterns (case insensitive)
+    if [ -z "$ISSUE_NUMBER" ]; then
+        ISSUE_NUMBER=$(echo "$PR_BODY" | grep -iE '(closes?|fixes?|resolves?) #[0-9]+' | grep -oE '#[0-9]+' | head -1 | sed 's/#//' 2>/dev/null || echo "")
+    fi
+
+    if [ -z "$ISSUE_NUMBER" ]; then
+        echo "⚠️  No linked issue found for PR #$PR_NUMBER, adding status/need-issue label"
+        if ! gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "status/need-issue" 2>/dev/null; then
+            echo "   ⚠️ Failed to add label (may already exist or have permission issues)"
+        fi
+        # Add PR number to the list
+        if [ -z "$PRS_NEEDING_COMMENT" ]; then
+            PRS_NEEDING_COMMENT="$PR_NUMBER"
+        else
+            PRS_NEEDING_COMMENT="$PRS_NEEDING_COMMENT,$PR_NUMBER"
+        fi
+        echo "needs_comment=true" >> $GITHUB_OUTPUT
+    else
+        echo "🔗 Found linked issue #$ISSUE_NUMBER"
+
+        # Remove status/need-issue label if present
+        if ! gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "status/need-issue" 2>/dev/null; then
+            echo "   status/need-issue label not present or could not be removed"
+        fi
+
+        # Get issue labels
+        echo "📥 Fetching labels from issue #$ISSUE_NUMBER"
+        local ISSUE_LABELS=""
+        if ! ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo ""); then
+            echo "   ⚠️ Could not fetch issue #$ISSUE_NUMBER (may not exist or be in different repo)"
+            ISSUE_LABELS=""
+        fi
+
+        # Get PR labels
+        echo "📥 Fetching labels from PR #$PR_NUMBER"
+        local PR_LABELS=""
+        if ! PR_LABELS=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || echo ""); then
+            echo "   ⚠️ Could not fetch PR labels"
+            PR_LABELS=""
+        fi
+
+        echo "   Issue labels: $ISSUE_LABELS"
+        echo "   PR labels: $PR_LABELS"
+
+        # Convert comma-separated strings to arrays
+        local ISSUE_LABEL_ARRAY PR_LABEL_ARRAY
+        IFS=',' read -ra ISSUE_LABEL_ARRAY <<< "$ISSUE_LABELS"
+        IFS=',' read -ra PR_LABEL_ARRAY <<< "$PR_LABELS"
+
+        # Find labels to add (on issue but not on PR)
+        local LABELS_TO_ADD=""
+        for label in "${ISSUE_LABEL_ARRAY[@]}"; do
+            if [ -n "$label" ] && [[ ! " ${PR_LABEL_ARRAY[*]} " =~ " ${label} " ]]; then
+                if [ -z "$LABELS_TO_ADD" ]; then
+                    LABELS_TO_ADD="$label"
+                else
+                    LABELS_TO_ADD="$LABELS_TO_ADD,$label"
+                fi
+            fi
+        done
+
+        # Find labels to remove (on PR but not on issue)
+        local LABELS_TO_REMOVE=""
+        for label in "${PR_LABEL_ARRAY[@]}"; do
+            if [ -n "$label" ] && [[ ! " ${ISSUE_LABEL_ARRAY[*]} " =~ " ${label} " ]]; then
+                # Don't remove status/need-issue since we already handled it
+                if [ "$label" != "status/need-issue" ]; then
+                    if [ -z "$LABELS_TO_REMOVE" ]; then
+                        LABELS_TO_REMOVE="$label"
+                    else
+                        LABELS_TO_REMOVE="$LABELS_TO_REMOVE,$label"
+                    fi
+                fi
+            fi
+        done
+
+        # Apply label changes
+        if [ -n "$LABELS_TO_ADD" ]; then
+            echo "➕ Adding labels: $LABELS_TO_ADD"
+            if ! gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "$LABELS_TO_ADD" 2>/dev/null; then
+                echo "   ⚠️ Failed to add some labels"
+            fi
+        fi
+
+        if [ -n "$LABELS_TO_REMOVE" ]; then
+            echo "➖ Removing labels: $LABELS_TO_REMOVE"
+            if ! gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABELS_TO_REMOVE" 2>/dev/null; then
+                echo "   ⚠️ Failed to remove some labels"
+            fi
+        fi
+
+        if [ -z "$LABELS_TO_ADD" ] && [ -z "$LABELS_TO_REMOVE" ]; then
+            echo "✅ Labels already synchronized"
+        fi
+        echo "needs_comment=false" >> $GITHUB_OUTPUT
+    fi
+}
+
+# If PR_NUMBER is set, process only that PR
+if [ -n "${PR_NUMBER:-}" ]; then
+    if ! process_pr "$PR_NUMBER"; then
+        echo "❌ Failed to process PR #$PR_NUMBER"
+        exit 1
+    fi
+else
+    # Otherwise, get all open PRs and process them
+    # The script logic will determine which ones need issue linking or label sync
+    echo "📥 Getting all open pull requests..."
+    if ! PR_NUMBERS=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json number -q '.[].number' 2>/dev/null); then
+        echo "❌ Failed to fetch PR list"
+        exit 1
+    fi
+    
+    if [ -z "$PR_NUMBERS" ]; then
+        echo "✅ No open PRs found"
+    else
+        # Count the number of PRs
+        PR_COUNT=$(echo "$PR_NUMBERS" | wc -w | tr -d ' ')
+        echo "📊 Found $PR_COUNT open PRs to process"
+        
+        for pr_number in $PR_NUMBERS; do
+            if ! process_pr "$pr_number"; then
+                echo "⚠️ Failed to process PR #$pr_number, continuing with next PR..."
+                continue
+            fi
+        done
+    fi
+fi
+
+# Ensure output is always set, even if empty
+if [ -z "$PRS_NEEDING_COMMENT" ]; then
+    echo "prs_needing_comment=[]" >> $GITHUB_OUTPUT
+else
+    echo "prs_needing_comment=[$PRS_NEEDING_COMMENT]" >> $GITHUB_OUTPUT
+fi
+
+echo "✅ PR triage completed"
+name: Close inactive issues
+
+on:
+  schedule:
+    - cron: "5 0 * * *"
+
+jobs:
+  close-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v5
+        with:
+          days-before-issue-stale: 7
+          days-before-issue-close: 7
+          
+          days-before-pr-stale: 7
+          days-before-pr-close: 7
+          
+          stale-issue-label: "stale"
+          stale-pr-label: "stale"
+          
+          stale-issue-message: "Bumping this issue because it has been open for 7 days with no activity. Closing automatically in 7 days unless it becomes active again."
+          close-issue-message: "Closing due to inactivity."
+          
+          stale-pr-message: "Bumping this pull request because it has been open for 7 days with no activity. Closing automatically in 7 days unless it becomes active again."
+          close-pr-message: "Closing due to inactivity."
+          
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          name: Unittest
+
+on: 
+  pull_request:
+    types:
+      - opened
+      - synchronize
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  build:
+    name: Build unittest
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.8"
+        cache: 'pip'
+    - name: Install min requirements
+      run: pip install -r requirements-min.txt
+    - name: Run tests
+      run: python -m etc.unittest
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+    - name: Install requirements
+      run: |
+        pip install -r requirements.txt
+        pip uninstall -y nodriver
+    - name: Run tests
+      run: python -m etc.unittest
+    - name: Save PR number
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+      run: |
+        mkdir -p ./pr
+        echo $PR_NUMBER > ./pr/pr_number
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pr_number
+        path: pr/
+          
+
+# This workflow will build a docker container, publish it to IBM Container Registry, and deploy it to IKS when there is a push to the "master" branch.
+#
+# To configure this workflow:
+#
+# 1. Ensure that your repository contains a Dockerfile
+# 2. Setup secrets in your repository by going to settings: Create ICR_NAMESPACE and IBM_CLOUD_API_KEY
+# 3. Change the values for the IBM_CLOUD_REGION, REGISTRY_HOSTNAME, IMAGE_NAME, IKS_CLUSTER, DEPLOYMENT_NAME, and PORT
+
+name: Build and Deploy to IKS
+
+on:
+  push:
+    branches: [ "master" ]
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  GITHUB_SHA: ${{ github.sha }}
+  IBM_CLOUD_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
+  IBM_CLOUD_REGION: us-south
+  ICR_NAMESPACE: ${{ secrets.ICR_NAMESPACE }}
+  REGISTRY_HOSTNAME: us.icr.io
+  IMAGE_NAME: iks-test
+  IKS_CLUSTER: example-iks-cluster-name-or-id
+  DEPLOYMENT_NAME: iks-test
+  PORT: 5001
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Download and Install IBM Cloud CLI
+    - name: Install IBM Cloud CLI
+      run: |
+        curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
+        ibmcloud --version
+        ibmcloud config --check-version=false
+        ibmcloud plugin install -f kubernetes-service
+        ibmcloud plugin install -f container-registry
+
+    # Authenticate with IBM Cloud CLI
+    - name: Authenticate with IBM Cloud CLI
+      run: |
+        ibmcloud login --apikey "${IBM_CLOUD_API_KEY}" -r "${IBM_CLOUD_REGION}" -g default
+        ibmcloud cr region-set "${IBM_CLOUD_REGION}"
+        ibmcloud cr login
+
+    # Build the Docker image
+    - name: Build with Docker
+      run: |
+        docker build -t "$REGISTRY_HOSTNAME"/"$ICR_NAMESPACE"/"$IMAGE_NAME":"$GITHUB_SHA" \
+          --build-arg GITHUB_SHA="$GITHUB_SHA" \
+          --build-arg GITHUB_REF="$GITHUB_REF" .
+
+    # Push the image to IBM Container Registry
+    - name: Push the image to ICR
+      run: |
+        docker push $REGISTRY_HOSTNAME/$ICR_NAMESPACE/$IMAGE_NAME:$GITHUB_SHA
+
+    # Deploy the Docker image to the IKS cluster
+    - name: Deploy to IKS
+      run: |
+        ibmcloud ks cluster config --cluster $IKS_CLUSTER
+        kubectl config current-context
+        kubectl create deployment $DEPLOYMENT_NAME --image=$REGISTRY_HOSTNAME/$ICR_NAMESPACE/$IMAGE_NAME:$GITHUB_SHA --dry-run -o yaml > deployment.yaml
+        kubectl apply -f deployment.yaml
+        kubectl rollout status deployment/$DEPLOYMENT_NAME
+        kubectl create service loadbalancer $DEPLOYMENT_NAME --tcp=80:$PORT --dry-run -o yaml > service.yaml
+        kubectl apply -f service.yaml
+        kubectl get services -o wide
