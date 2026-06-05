@@ -47,6 +47,22 @@ WPA2 passwords are **always at least 8 characters**. Any shorter entry can never
 awk 'length($0) >= 8' full.txt > wpa2.txt
 ```
 
+## Prep Script (recommended)
+
+`wordlist-prep.sh` does the cleaning for you — point it at any wordlist (or a whole folder of `.txt`/`.gz` files) and it removes duplicates, strips Windows line endings, and keeps only valid WPA2 candidates (8–63 printable characters):
+
+```bash
+chmod +x Scripts/wordlist-prep.sh
+
+# Clean a single list
+./Scripts/wordlist-prep.sh rockyou.txt
+
+# Clean a whole wordlist folder and write a gzipped copy
+./Scripts/wordlist-prep.sh -o ultimate-clean.txt -z Wordlists/Ultimate2016/
+```
+
+Run `./Scripts/wordlist-prep.sh -h` for all options. A pre-cleaned Ultimate2016 list is also available on the [Releases](https://github.com/kennyn510/wpa2-wordlists/releases) page if you'd rather just download it.
+
 ## Useful One-Liners for Wordlist Manipulation
 
 **Remove duplicates (memory-safe for large files)**
@@ -74,6 +90,17 @@ cat file1.txt file2.txt > combined.txt
 ```bash
 grep -v '^[[:space:]]*$' old.txt > new.txt
 ```
+
+## Current & Maintained Sources
+
+The lists here were compiled in 2016 and are still effective against weak and reused passwords, but they are not actively updated. For the newest data and rule sets, combine them with these maintained projects:
+
+- **[SecLists](https://github.com/danielmiessler/SecLists)** — the industry-standard collection of wordlists for passwords, usernames, fuzzing, and more.
+- **[Weakpass](https://weakpass.com/)** — large, regularly updated wordlists aggregated from recent breaches.
+- **[hashcat rules](https://github.com/hashcat/hashcat/tree/master/rules)** — mutation rules (e.g. `best64.rule`) that turn a small wordlist into millions of smart variations, far more efficient than a bigger raw list.
+- **[probable-wordlists](https://github.com/berzerk0/Probable-Wordlists)** — wordlists ordered by real-world frequency.
+
+A good modern workflow is a curated list (like the cleaned release here) **plus** hashcat rules, rather than one enormous raw file.
 
 ## Further Reading
 
